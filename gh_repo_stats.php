@@ -5,7 +5,7 @@
  *
  * @desc        
  * 
- * @package     GithubArchiveAccess
+ * @package     GithubAccess
  *
  * @example
  *
@@ -13,9 +13,9 @@
  */
 
 /**
- * Class GH_RepoStats
+ * Class GH_Access
  */
-class GH_RepoStats
+class GH_Access
 {
     public $afterDatetime;
     public $beforeDatetime;
@@ -24,7 +24,9 @@ class GH_RepoStats
     public $debugMode;
 
     public $maxOutputCount      =   20;
+    public $maxDaysBetween      =   60;
     public $eventTypesUrl       =   'https://api.github.com/events';
+    public $eventTypesList      =   'https://developer.github.com/v3/activity/events/types/';
 
 
     /**
@@ -52,7 +54,7 @@ class GH_RepoStats
             $this->showHelp();
         }
 
-        $this->codeComments("debug", "property afterDatetime set to "    . $this->debugMode);
+        $this->codeComments("debug", "property afterDatetime set to "    . $this->afterDatetime);
         $this->codeComments("debug", "property beforeDatetime set to "   . $this->beforeDatetime);
         $this->codeComments("debug", "property eventName set to "        . $this->eventName);
         $this->codeComments("debug", "property outputCount set to "      . $this->outputCount);
@@ -101,7 +103,7 @@ class GH_RepoStats
 
 
     /**
-     * Makes a GET request to https://api.github.com/events and adds the current list of event types to an array
+     * Get the contents of the current list of event types and create an array
      * which is in turn used to validate the supplied event name argument
      *
      * @param $eventTypeName
@@ -109,69 +111,72 @@ class GH_RepoStats
      */
     public function validateEventName($eventTypeName)
     {
-        $eventTypeName  =   (string) $eventTypeName;
+        $eventTypeName          =   (string) $eventTypeName;
+        $currentEventList       =   array();
+        $startExtractionAtLine  =   0;
+        $eventTypesPageArray    =   file($this->eventTypesList);
 
-        $this->codeComments("debug", "Initializing cURL...");
-        $curl   =   curl_init($this->eventTypesUrl);
-
-        $this->codeComments("debug", "Setting cURL options...");
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER   ,   true);
-        curl_setopt($curl, CURLOPT_HEADER           ,   0);
-        curl_setopt($curl, CURLOPT_HTTPHEADER       ,   array
-                                                        (
-                                                            'Content-Type: application/json',
-                                                            'User-Agent: Hyfn GitHub Archive Challenge'
-                                                        ));
-
-        $curlOutput         =   curl_exec($curl);
-        $this->codeComments("debug", "Executing cURL");
-        $curlResponseInfo   =   curl_getinfo($curl);
-        $this->codeComments("debug", "Getting cURL response info.");
-
-        curl_close($curl);
-
-        if($curlOutput === FALSE)
+        if(count($eventTypesPageArray) > 0)
         {
-            $this->codeComments("debug", 'An error occurred during curl execution. Additional info: ' . var_export($curlResponseInfo));
-            exit;
-        }
-        else
-        {
-            $eventTypes         =   json_decode($curlOutput);
-            $this->codeComments("debug", "Received " . count($eventTypes) . " Event Types.");
-
-            if(count($eventTypes) > 0)
+            $this->codeComments("debug", "Parsing page data at " . $this->eventTypesList);
+            foreach ($eventTypesPageArray as $lineKey => $pageLine)
             {
-                if(isset($eventTypes->response->status) && $eventTypes->response->status == 'ERROR')
+                if(stristr($pageLine, "markdown-toc"))
                 {
-                    $this->codeComments("debug", "An error occurred while retrieving current event types. This may help: " . $eventTypes->response->errormessage);
-                    exit;
+                    $this->codeComments("debug", "Found event list table of contents at line " . $lineKey . ": " . $pageLine);
+                    $startExtractionAtLine  =   $lineKey+1;
+                    break;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            if($startExtractionAtLine > 0)
+            {
+                $this->codeComments("debug", "Reducing array size, starting from line " . $startExtractionAtLine);
+                $smallerEventTypesPage  =   array_slice($eventTypesPageArray,$startExtractionAtLine, 50);
+
+                $this->codeComments("debug", "Parsing new smaller array.");
+                foreach($smallerEventTypesPage as $smallerLineKey => $smallerPageLine)
+                {
+                    $posOfEndingULTag   =   strpos($smallerPageLine, "</ul>");
+                    if(FALSE === $posOfEndingULTag)
+                    {
+                        $reformattedLine    =   str_replace('">', '-', str_replace('</a></li>', '', str_replace('<li><a href="#', '', $smallerPageLine)) );
+                        $keyValuePairRaw    =   explode("-",$reformattedLine);
+                        $currentEventList[(string) trim($keyValuePairRaw[0])]   =   (string) trim($keyValuePairRaw[1]);
+                    }
+                    else
+                    {
+                        break;
+                    }
                 }
 
-                $eventTypeValidationArray = array();
-                foreach ($eventTypes as $eventType)
-                {
-                    $this->codeComments("debug", "    Event type: " . $eventType->type . " added to validation array.");
-                    $eventTypeValidationArray[]   =   (string) $eventType->type;
-                }
-
-                if(in_array($eventTypeName, $eventTypeValidationArray))
+                $this->codeComments("debug", "The new current event list is:<pre>" . print_r($currentEventList,1) . "</pre>");
+                $this->codeComments("debug", "Validating Event Name against newly created list.");
+                if(in_array($eventTypeName,$currentEventList) || array_key_exists(strtolower($eventTypeName), $currentEventList) )
                 {
                     $this->codeComments("debug", "Your event type is valid. You get a gold star.");
                     return TRUE;
                 }
                 else
                 {
-                    $this->codeComments("debug", "Your event type name is invalid. Check https://developer.github.com/v3/activity/events/types/.");
+                    $this->codeComments("debug", "Could not find the event [". $eventTypeName . "] in GitHub's current list of event types. Retype your event ");
                     return FALSE;
                 }
             }
             else
             {
-                $this->codeComments("debug", "Could not retrieve event types. Check https://developer.github.com/v3/activity/events/types/.");
+                $this->codeComments("debug", "Could not find GitHub's list of valid types. Recheck " . $this->eventTypesList);
                 return FALSE;
             }
-
+        }
+        else
+        {
+            $this->codeComments("debug", "Could not retrieve any data from the page at " . $this->eventTypesList);
+            return FALSE;
         }
     }
 
@@ -195,8 +200,20 @@ class GH_RepoStats
         }
         else
         {
-            $this->codeComments("debug", "Your after & before times are valid. You get a gold star.");
-            return TRUE;
+            $this->afterDatetime    =   (int) $rawStringToTime_start;
+            $this->beforeDatetime   =   (int) $rawStringToTime_end;
+            $daysBetween            =   floor(($this->beforeDatetime - $this->afterDatetime)/(60*60*24));
+
+            if($daysBetween > $this->maxDaysBetween)
+            {
+                $this->codeComments("debug", "Too many days [" . $daysBetween . "] between your start (after) and end (before) dates. Whatcha tryin to do? We don't grow servers here ya know!!");
+                return FALSE;
+            }
+            else
+            {
+                $this->codeComments("debug", "Your after & before times are valid. You get a gold star.");
+                return TRUE;
+            }
         }
     }
 
@@ -225,6 +242,45 @@ class GH_RepoStats
             $this->codeComments("debug", "At least one supplied arguments is invalid. Please return all gold stars and get to debugging.");
             return FALSE;
         }
+    }
+
+
+    /**
+     * Get a list of Github Archive gz files
+     *
+     * @return array
+     */
+    public function getZippedArchiveFileListFromDates()
+    {
+        $listArray      =   array();
+        $daysBetween    =   floor(($this->beforeDatetime - $this->afterDatetime)/(60*60*24));
+        $this->codeComments("debug", "startDateTime =>" . $this->afterDatetime);
+        $this->codeComments("debug", "endDateTime =>" . $this->beforeDatetime);
+
+        $listArray[0]   =   'http://data.githubarchive.org/' . date('Y-m-d-H', $this->afterDatetime) . '.json.gz';
+
+        for($i=1; $i<=$daysBetween; $i++)
+        {
+            $nextDay        =   date('Y-m-d', strtotime("+" . $i . " day" , strtotime(date("Y-m-d", $this->afterDatetime)) ));
+            $listArray[]    =   'http://data.githubarchive.org/' . $nextDay . '.json.gz';
+
+        }
+
+        $this->codeComments("debug", "Here's the list array of archive files:<pre>" . print_r($listArray,1) . "</pre>");
+        return $listArray;
+    }
+
+
+
+
+    public function getArchiveData()
+    {
+        $dataOutput     =   array();
+
+
+
+
+        return $dataOutput;
     }
 
 
@@ -259,7 +315,7 @@ class GH_RepoStats
         error_log("");
         error_log("");
         error_log("Example:");
-        error_log("php gh_repo_stats.php \"2014-01-13 12:00:00\" \"2014-06-13 12:00:00\" Push_Event 20 debug");
+        error_log("php gh_repo_stats.php \"2014-01-13 12:00:00\" \"2014-06-13 12:00:00\" PushEvent 20 debug");
         error_log("");
 
         error_log("");
@@ -293,22 +349,31 @@ class GH_RepoStats
                                     break;
 
 
-            default : exit($message . "Invalid DebugMode specified. Valid options are debug|log|silent. Run php gh_repo_stats.php --help for more information"); break;
+            default : exit("Invalid DebugMode specified. Valid options are debug|log|silent. Run php gh_repo_stats.php --help for more information"); break;
         }
 
     }
 }
 
 
-$GH_RepoStats  =   new GH_RepoStats();
-if($GH_RepoStats->initializeVariablesFromArguments($argv[1], $argv[2], $argv[3], $argv[4], $argv[5]))
+$GH_Access  =   new GH_Access();
+if($GH_Access->initializeVariablesFromArguments($argv[1], $argv[2], $argv[3], $argv[4], $argv[5]))
 {
-    $GH_RepoStats->codeComments("debug", "Arguments are valid and initialized");
+    $GH_Access->codeComments("debug", "Arguments are valid and initialized");
 
+    // Get the file names
+    $GH_Access->getZippedArchiveFileListFromDates();
 
+    // Get the data
+
+    // Format the data into an array or object or collection
+
+    // Choose output format of the data - csv, json, xml
+
+    // Output data to screen
 }
 else
 {
-    $GH_RepoStats->codeComments("log", "Exiting Script.");
+    $GH_Access->codeComments("log", "Exiting Script.");
     exit;
 }
