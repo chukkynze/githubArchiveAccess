@@ -254,16 +254,12 @@ class GH_Access
     {
         $listArray      =   array();
         $daysBetween    =   floor(($this->beforeDatetime - $this->afterDatetime)/(60*60*24));
-        $this->codeComments("debug", "startDateTime =>" . $this->afterDatetime);
-        $this->codeComments("debug", "endDateTime =>" . $this->beforeDatetime);
-
         $listArray[0]   =   'http://data.githubarchive.org/' . date('Y-m-d-H', $this->afterDatetime) . '.json.gz';
 
         for($i=1; $i<=$daysBetween; $i++)
         {
             $nextDay        =   date('Y-m-d', strtotime("+" . $i . " day" , strtotime(date("Y-m-d", $this->afterDatetime)) ));
             $listArray[]    =   'http://data.githubarchive.org/' . $nextDay . '.json.gz';
-
         }
 
         $this->codeComments("debug", "Here's the list array of archive files:<pre>" . print_r($listArray,1) . "</pre>");
