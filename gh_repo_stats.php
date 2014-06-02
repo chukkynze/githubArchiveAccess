@@ -9,11 +9,17 @@
  *
  * @example
  *
- * php gh_repo_stats.php "2014-01-13 12:00:00" "2014-06-13 12:00:00" PushEvent 20 debug
+ * php gh_repo_stats.php "2014-01-13 12:00:00" "2014-02-13 12:00:00" PushEvent 20 debug
  */
+
+require_once "../GoogleApiPhpClient/src/Google/Client.php";
+require_once "../GoogleApiPhpClient/src/Google/Service/BigQuery.php";
 
 /**
  * Class GH_Access
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
  */
 class GH_Access
 {
@@ -23,14 +29,38 @@ class GH_Access
     public $outputCount;
     public $debugMode;
 
+    /**
+     * The following properties can be manipulated to impact performance
+     */
     public $maxOutputCount      =   20;
     public $maxDaysBetween      =   60;
+    public $maxMemoryAllowed    =   -1;
+    public $maxMilliSeconds     =   5000;
+
+    /**
+     * The following property affects output format
+     */
+    public $resultOutput;
+    public $displayFormat       =   'screen';
+
     public $eventTypesUrl       =   'https://api.github.com/events';
     public $eventTypesList      =   'https://developer.github.com/v3/activity/events/types/';
+
+    /**
+     * BigQuery Specifications
+     */
+    public $GoogleApiClientID               =   '242880960385-c3mpc0id66q00bs5dnssnlb1c9jcg993.apps.googleusercontent.com';
+    public $GoogleApiClientServiceAccount   =   '242880960385-c3mpc0id66q00bs5dnssnlb1c9jcg993@developer.gserviceaccount.com';
+    public $GoogleApiKey                    =   'AIzaSyBKjieL7l0YAHnhgQDUabB0oNAHPQEkF-8';
+    public $GoogleApiProjectID              =   'golden-toolbox-595';
+    public $GoogleApiPKCSFileLocation       =   "e42fb1bd21594e0896f0e54bbc2ec060fe45f794-privatekey.p12";
 
 
     /**
      * This simply gets the ball rolling. Makes sure all supplied arguments are valid and ensures all settings are ... set
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
      *
      * @param $argv1
      * @param $argv2
@@ -73,8 +103,69 @@ class GH_Access
     }
 
 
+    public function displayResponse($resultsArray)
+    {
+        switch($this->displayFormat)
+        {
+            case 'screen'       :   $this->displayResultsToScreen($resultsArray); break;
+            case 'csv-file'     :   $this->displayResultsToCSVFile($resultsArray); break;
+            case 'xml'          :   $this->displayResultsToXMLFile($resultsArray); break;
+
+            default : $this->displayResultsToScreen($resultsArray);
+        }
+    }
+
+    /**
+     * Displays raw results to screen
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
+     *
+     * @param $resultsArray
+     */
+    public function displayResultsToScreen($resultsArray)
+    {
+        echo "\n\n";
+        for($r=0;$r<count($resultsArray);$r++)
+        {
+            echo $resultsArray[$r]['url'] . " - " . $resultsArray[$r]['count'] . " events \n";
+        }
+        echo "\n\n";
+    }
+
+    /**
+     * This is a placeholder method for logic to be sent and processed for CSV file generation
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
+     *
+     * @param $resultsArray
+     */
+    public function displayResultsToCSVFile($resultsArray)
+    {
+        $this->codeComments("debug", "Your output is being converted to the appropriate format for your CSV file. Go get coffee.");
+    }
+
+
+    /**
+     * This is a placeholder method for logic to be sent and processed for XML file generation
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
+     *
+     * @param $resultsArray
+     */
+    public function displayResultsToXMLFile($resultsArray)
+    {
+        $this->codeComments("debug", "Your output is being converted to the appropriate format for your XML file. Go get coffee.");
+    }
+
+
     /**
      * Validates the supplied output count and ensures it is below approved limits
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
      *
      * @param $outputCount
      * @return bool
@@ -104,7 +195,12 @@ class GH_Access
 
     /**
      * Get the contents of the current list of event types and create an array
-     * which is in turn used to validate the supplied event name argument
+     * which is in turn used to validate the supplied event name argument.
+     *
+     * This is in regard to: "There are 18 published Event Types. How would you manage them? What would you do if GitHub added more Event Types?"
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
      *
      * @param $eventTypeName
      * @return bool
@@ -139,7 +235,7 @@ class GH_Access
                 $smallerEventTypesPage  =   array_slice($eventTypesPageArray,$startExtractionAtLine, 50);
 
                 $this->codeComments("debug", "Parsing new smaller array.");
-                foreach($smallerEventTypesPage as $smallerLineKey => $smallerPageLine)
+                foreach($smallerEventTypesPage as $smallerPageLine)
                 {
                     $posOfEndingULTag   =   strpos($smallerPageLine, "</ul>");
                     if(FALSE === $posOfEndingULTag)
@@ -184,6 +280,9 @@ class GH_Access
     /**
      * Validates the supplied arguments for after and before time
      *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
+     *
      * @param string $startDateTime
      * @param string $endDateTime
      * @return bool
@@ -222,6 +321,9 @@ class GH_Access
      * Run all validation methods for the argument types. Each validation method will have its own documentation and
      * debug output
      *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
+     *
      * @return bool
      */
     public function validateArguments()
@@ -247,6 +349,10 @@ class GH_Access
 
     /**
      * Get a list of Github Archive gz files
+     * This was the beginning of an alternative methodology before I began playing with BigQuery
+     *
+     * @author      Chukky Nze <chukkynze@gmail.com>
+     * @since 		2/19/14 12:13 PM
      *
      * @return array
      */
@@ -264,19 +370,6 @@ class GH_Access
 
         $this->codeComments("debug", "Here's the list array of archive files:<pre>" . print_r($listArray,1) . "</pre>");
         return $listArray;
-    }
-
-
-
-
-    public function getArchiveData()
-    {
-        $dataOutput     =   array();
-
-
-
-
-        return $dataOutput;
     }
 
 
@@ -347,26 +440,109 @@ class GH_Access
 
             default : exit("Invalid DebugMode specified. Valid options are debug|log|silent. Run php gh_repo_stats.php --help for more information"); break;
         }
-
     }
 }
 
+session_start();
 
 $GH_Access  =   new GH_Access();
 if($GH_Access->initializeVariablesFromArguments($argv[1], $argv[2], $argv[3], $argv[4], $argv[5]))
 {
     $GH_Access->codeComments("debug", "Arguments are valid and initialized");
 
-    // Get the file names
-    $GH_Access->getZippedArchiveFileListFromDates();
+    try
+    {
+        # Setup Client for BigQuery Call
+        $client         =   new Google_Client();
 
-    // Get the data
+        $client->setApplicationName("GitHub Archive Access");
+        $client->setClientId($GH_Access->GoogleApiClientServiceAccount);
+        $client->setDeveloperKey($GH_Access->GoogleApiKey);
+        $client->setScopes(array
+        (
+            'https://www.googleapis.com/auth/bigquery',
+            'https://www.googleapis.com/auth/bigquery.readonly',
+        ));
 
-    // Format the data into an array or object or collection
 
-    // Choose output format of the data - csv, json, xml
+        # Get Authorized!
+        if (isset($_SESSION['service_token']))
+        {
+            $client->setAccessToken($_SESSION['service_token']);
+        }
 
-    // Output data to screen
+        # Get your PKCS 12 file
+        $key    =   file_get_contents($GH_Access->GoogleApiPKCSFileLocation);
+        $cred   =   new Google_Auth_AssertionCredentials
+                        (
+                            $GH_Access->GoogleApiClientServiceAccount,
+                            array
+                            (
+                                'https://www.googleapis.com/auth/bigquery',
+                            ),
+                            $key
+                        );
+        $client->setAssertionCredentials($cred);
+        if ($client->getAuth()->isAccessTokenExpired())
+        {
+            $client->getAuth()->refreshTokenWithAssertion($cred);
+        }
+        $_SESSION['service_token']  =   $client->getAccessToken();
+
+
+        # Prepare BigQuery
+        $job            =   new Google_Service_Bigquery_Job();
+        $config         =   new Google_Service_Bigquery_JobConfiguration();
+        $queryConfig    =   new Google_Service_Bigquery_JobConfigurationQuery();
+        $BigQuery       =   new Google_Service_Bigquery($client);
+
+        # Ze Query
+        $sql            =  "SELECT repository_url, count(repository_url) as event
+                            FROM [githubarchive:github.timeline]
+                            WHERE
+                                type=\"" . $GH_Access->eventName . "\"
+                            AND PARSE_UTC_USEC(created_at) >= PARSE_UTC_USEC('" . date("Y-m-d h:i:s", $GH_Access->afterDatetime) . "')
+                            AND PARSE_UTC_USEC(created_at) <= PARSE_UTC_USEC('" . date("Y-m-d h:i:s", $GH_Access->beforeDatetime) . "')
+
+                            GROUP BY repository_url
+                            ORDER BY event DESC
+                            LIMIT " . $GH_Access->outputCount;
+
+        # API Call with Ze Query to BigQuery
+        $query          =   new Google_Service_Bigquery_QueryRequest();
+        $query->setQuery($sql);
+        $jobs           =   $BigQuery->jobs;
+        $response       =   $jobs->query($GH_Access->GoogleApiProjectID, $query);
+
+        # Process Response to generate more flexible output
+        $output     =   array();
+        $rows       =   $response->getRows();
+        for($r=0;$r<$response->totalRows;$r++)
+        {
+            $cell       =   $rows[$r]->getF();
+            $url        =   str_replace("https://github.com/", "", $cell[0]->getV());
+            $count      =   $cell[1]->getV();
+            $output[]   =   array('url'=> $url, 'count'=>$count);
+        }
+
+        $GH_Access->resultOutput    =   $output;
+        $GH_Access->displayResponse($output);
+
+
+
+
+        // Get the data
+
+        // Format the data into an array or object or collection
+
+        // Choose output format of the data - csv, json, xml
+
+        // Output data to screen
+    }
+    catch(Google_Service_Exception $e)
+    {
+        $GH_Access->codeComments("log", "Exiting Script with errors => " . $e->getMessage());
+    }
 }
 else
 {
